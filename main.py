@@ -2,6 +2,8 @@ import argparse
 import sys
 from pathlib import Path
 import json
+import ctypes
+import platform
 
 
 class Repository:
@@ -26,6 +28,10 @@ class Repository:
             return False
         # directories
         self.kram_dir.mkdir()
+        # hide the directory
+        if platform.system() == "Windows":
+            # 0x02 is the hex code for the 'Hidden' attribute in Windows
+            ctypes.windll.kernel32.SetFileAttributesW(str(self.kram_dir), 0x02)
         self.objects_dir.mkdir()
         self.refs_dir.mkdir()
         self.heads_dir.mkdir()
