@@ -1,0 +1,12 @@
+# Ignore Kram's internal metadata 
+.kram/
+
+# Ignore Python's environment and cache files
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Ignore VS Code settings
+.vscode/
