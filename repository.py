@@ -63,6 +63,16 @@ class Repository:
     def save_index(self, index: dict[str, str]):
         self.index_file.write_text(json.dumps(index, indent=2))
 
+    def _delete_object(self, path: str):
+        obj_dir = self.objects_dir / path[:2]
+        obj_file = obj_dir / path[2:]
+        if not obj_file.exists():
+            raise FileNotFoundError(f"The file {path} does not exist")
+        obj_file.unlink()
+        # remove the directory if it is empty
+        if not any(obj_dir.iterdir()):
+            obj_dir.rmdir()
+
     def add_file(self, path: str):
         full_path = self.path / path
         if not full_path.exists():
@@ -75,6 +85,10 @@ class Repository:
         blob_hash = self._store_object(blob)
         # update index to include the file
         index = self._load_index()
+        # delete previous location (garbage collection)
+        old_hash = index.get(path)
+        if old_hash and old_hash != blob_hash:
+            self._delete_object(old_hash)
         index[path] = blob_hash
         self.save_index(index)
         print(f"Added {path} to the index")
@@ -101,7 +115,11 @@ class Repository:
                 # store the blob object in .kram/objects i.e. the database
                 blob_hash = self._store_object(blob)
                 # update index
-                index[rel_path.as_posix()] = blob_hash
+                rel_path_str = rel_path.as_posix()
+                old_hash = index.get(rel_path_str)
+                if old_hash and old_hash != blob_hash:
+                    self._delete_object(old_hash)
+                index[rel_path_str] = blob_hash
                 added_count += 1
                 print(f"Added {rel_path.as_posix()} to the index")
         self.save_index(index)
@@ -123,6 +141,7 @@ class Repository:
         # 1. Define your ignore list (can be loaded from a file later)
         ignore_list = {
             "venv",
+            "__pycache__",
             ".git",
             "node_modules",
             ".vscode",
