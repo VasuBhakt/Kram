@@ -19,6 +19,15 @@ def main():
         "paths", nargs="+", help="Paths to files to add"
     )  # nargs = + implies atleast one file is needed
 
+    # commit command
+    commit_parser = subparsers.add_parser(
+        "commit", help="Commit changes to the repository"
+    )
+    commit_parser.add_argument(
+        "-m", "--message", help="Message to commit", required=True
+    )
+    commit_parser.add_argument("-author", help="Commit author details")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -36,6 +45,12 @@ def main():
                 return
             for path in args.paths:
                 repo.add_path(path)
+        elif args.command == "commit":
+            if not repo.kram_dir.exists():
+                print("Not a kram repository")
+                return
+            author = args.author or "Kram User"
+            repo.commit(args.message, author)
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)

@@ -12,5 +12,3 @@ __pycache__
 node_modules
 .vscode
 .idea
-
-test_folder/text2.txt

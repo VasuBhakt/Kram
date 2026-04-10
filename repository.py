@@ -102,6 +102,15 @@ class Repository:
         if not any(obj_dir.iterdir()):
             obj_dir.rmdir()
 
+    def _load_object(self, obj_hash: str) -> KramObject:
+        obj_dir = self.objects_dir / obj_hash[:2]
+        obj_file = obj_dir / obj_hash[2:]
+
+        if not obj_file.exists():
+            raise FileNotFoundError(f"Object {obj_hash} not found")
+
+        return KramObject.deserialize(obj_file.read_bytes())
+
     def _add_file(self, path: str, current_ignore_patterns: set[str]):
         full_path = self.path / path
         if not full_path.exists():
@@ -117,13 +126,9 @@ class Repository:
         blob_hash = self._store_object(blob)
         # update index to include the file
         index = self._load_index()
-        # delete previous location (garbage collection)
-        old_hash = index.get(path)
-        if old_hash and old_hash != blob_hash:
-            self._delete_object(old_hash)
-        index[path] = blob_hash
+        index[rel_path.as_posix()] = blob_hash
         self._save_index(index)
-        print(f"Added {path} to the index")
+        print(f"Added {rel_path.as_posix()} to the index")
 
     def _add_directory(self, path: str, current_ignore_patterns: set[str]):
         full_path = self.path / path
@@ -148,11 +153,7 @@ class Repository:
                 # store the blob object in .kram/objects i.e. the database
                 blob_hash = self._store_object(blob)
                 # update index
-                rel_path_str = rel_path.as_posix()
-                old_hash = index.get(rel_path_str)
-                if old_hash and old_hash != blob_hash:
-                    self._delete_object(old_hash)
-                index[rel_path_str] = blob_hash
+                index[rel_path.as_posix()] = blob_hash
                 added_count += 1
                 print(f"Added {rel_path.as_posix()} to the index")
         self._save_index(index)
@@ -171,6 +172,98 @@ class Repository:
             self._add_directory(path, current_ignore_patterns)
         else:
             raise ValueError(f"{path} is neither a file nor a directory")
+
+    def _create_tree_from_index(self):
+        index = self._load_index()
+        if not index:
+            tree = Tree()
+            return self._store_object(tree)
+        dirs = {}
+        files = {}
+        for file_path, blob_hash in index.items():
+            parts = file_path.split("/")
+            if len(parts) == 1:
+                # file in root folder
+                files[parts[0]] = blob_hash
+            else:
+                dir_name = parts[0]
+                if dir_name not in dirs:
+                    dirs[dir_name] = {}
+                current = dirs[dir_name]
+                for part in parts[1:-1]:
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
+
+                current[parts[-1]] = blob_hash
+
+        def _create_tree_recursive(entries_dict: dict):
+            tree = Tree()
+            for name, value in entries_dict.items():
+                if isinstance(value, str):
+                    # file
+                    tree.add_entry("100644", name, value)
+                if isinstance(value, dict):
+                    # directory
+                    subtree_hash = _create_tree_recursive(value)
+                    tree.add_entry("40000", name, subtree_hash)
+            return self._store_object(tree)
+
+        root_entries = {**files}
+        for dir_name, dir_content in dirs.items():
+            root_entries[dir_name] = dir_content
+
+        return _create_tree_recursive(root_entries)
+
+    def get_branch_commit(self, current_branch: str):
+        branch_file = self.heads_dir / current_branch
+        if branch_file.exists():
+            return branch_file.read_text().strip()
+        return None
+
+    def set_branch_commit(self, current_branch: str, commit_hash: str):
+        branch_file = self.heads_dir / current_branch
+        branch_file.write_text(commit_hash + "\n")
+
+    def commit(self, message: str, author: str = "Kram User"):
+        # create a tree object from the index (staging area)
+        tree_hash = self._create_tree_from_index()
+
+        current_branch = self.get_current_branch()
+        parent_commit = self.get_branch_commit(current_branch)
+        parent_hashes = [parent_commit] if parent_commit else []
+
+        index = self._load_index()
+        if not index:
+            print(f"nothing to commit, working tree clean")
+            return None
+
+        if parent_commit:
+            parent_commit_obj = self._load_object(parent_commit)
+            parent_commit_data = Commit._deserialize_commit(parent_commit_obj.content)
+            if tree_hash == parent_commit_data.tree_hash:
+                print(f"nothing to commit, working tree clean")
+                return None
+
+        commit = Commit(
+            tree_hash=tree_hash,
+            parent_hashes=parent_hashes,
+            author=author,
+            committer=author,
+            message=message,
+        )
+        commit_hash = self._store_object(commit)
+        self.set_branch_commit(current_branch, commit_hash)
+        print(f"Created commit {commit_hash} on branch {current_branch}")
+        return commit_hash
+
+    def get_current_branch(self) -> str:
+        if not self.head_file.exists():
+            return "main"
+        head_content = self.head_file.read_text().strip()
+        if head_content.startswith("ref: refs/heads/"):
+            return head_content[16:]
+        return "main"
 
     @property
     def _ignore_patterns(self) -> set[str]:
@@ -197,10 +290,7 @@ class Repository:
         for part in file_path.parts:
             part_lower = part.lower()
 
-            if part_lower in ignore_patterns:
-                return True
-
-            if part_lower.startswith(".") and part_lower != ".":
+            if part_lower in ignore_patterns or part_lower in [".kram", ".git"]:
                 return True
 
         return False
