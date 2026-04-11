@@ -28,6 +28,12 @@ def main():
     )
     commit_parser.add_argument("-author", help="Commit author details")
 
+    # remove command (rm)
+    rm_parser = subparsers.add_parser("rm", help="Remove file from the staging area")
+    rm_parser.add_argument(
+        "paths", nargs="+", help="Paths to files to remove"
+    )  # nargs = + implies atleast one file is needed
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -51,6 +57,12 @@ def main():
                 return
             author = args.author or "Kram User"
             repo.commit(args.message, author)
+        elif args.command == "rm":
+            if not repo.kram_dir.exists():
+                print("Not a kram repository")
+                return
+            for path in args.paths:
+                repo.remove_path(path)
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)

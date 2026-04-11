@@ -159,6 +159,34 @@ class Repository:
         self._save_index(index)
         print(f"Added {added_count} files from {path} to the index")
 
+    def _rm_file(self, path: str):
+        full_path = self.path / path
+        if not full_path.exists():
+            raise FileNotFoundError(f"File not found: {full_path}")
+        rel_path = full_path.relative_to(self.path)
+        index = self._load_index()
+        if rel_path.as_posix() not in index:
+            raise ValueError(f"{path} is not tracked by Kram")
+        del index[rel_path.as_posix()]
+        self._save_index(index)
+        print(f"Untracked file {full_path.as_posix()}")
+
+    def _rm_dir(self, path: str):
+        full_path = self.path / path
+        if not full_path.exists():
+            raise FileNotFoundError(f"Directory not found: {full_path}")
+        index = self._load_index()
+        rm_count = 0
+        for file_path in full_path.rglob("*"):
+            rel_path = file_path.relative_to(self.path)
+            if file_path.is_file():
+                if rel_path.as_posix() in index:
+                    del index[rel_path.as_posix()]
+                    rm_count += 1
+                    print(f"Untracked file {file_path.as_posix()} ")
+        self._save_index(index)
+        print(f"Untrack {rm_count} files from {path}")
+
     def add_path(self, path: str):
         full_path = self.path / path
         if not full_path.exists():
@@ -170,6 +198,19 @@ class Repository:
             self._add_file(path, current_ignore_patterns)
         elif full_path.is_dir():
             self._add_directory(path, current_ignore_patterns)
+        else:
+            raise ValueError(f"{path} is neither a file nor a directory")
+
+    def remove_path(self, path: str):
+        full_path = self.path / path
+        if not full_path.exists():
+            print(f"File not found: {full_path}")
+            return
+        # load current ignore patterns
+        if full_path.is_file():
+            self._rm_file(path)
+        elif full_path.is_dir():
+            self._rm_dir(path)
         else:
             raise ValueError(f"{path} is neither a file nor a directory")
 
