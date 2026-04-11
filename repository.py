@@ -166,7 +166,8 @@ class Repository:
         rel_path = full_path.relative_to(self.path)
         index = self._load_index()
         if rel_path.as_posix() not in index:
-            raise ValueError(f"{path} is not tracked by Kram")
+            print(f"{path} is not tracked by Kram")
+            return
         del index[rel_path.as_posix()]
         self._save_index(index)
         print(f"Untracked file {full_path.as_posix()}")
