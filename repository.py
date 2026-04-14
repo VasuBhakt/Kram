@@ -299,6 +299,125 @@ class Repository:
         print(f"Created commit {commit_hash} on branch {current_branch}")
         return commit_hash
 
+    def get_files_from_tree_recursive(self, tree_hash: str, prefix: str = ""):
+        files = set()
+        try:
+            tree_obj = self._load_object(tree_hash)
+            tree_data = Tree._deserialize_entries(tree_obj.content)
+            for mode, name, obj_hash in tree_data.entries:
+                full_name = f"{prefix}{name}"
+                if mode.startswith("100"):
+                    files.add(full_name)
+                elif mode.startswith("400"):
+                    files.update(
+                        self.get_files_from_tree_recursive(obj_hash, full_name)
+                    )
+        except Exception as e:
+            print(f"Warning: Could not load tree {tree_hash}: {e}")
+        return files
+
+    def _restore_working_directory(self, branch: str, files_to_clear: set[str]):
+        # remove files from previous branch
+        if files_to_clear:
+            for rel_path in sorted(files_to_clear):
+                file_path = self.path / rel_path
+                try:
+                    if file_path.is_file():
+                        file_path.unlink()
+                except Exception as e:
+                    print(f"Warning: Could not remove file {file_path}: {e}")
+
+        target_commit_hash = self.get_branch_commit(branch)
+        if not target_commit_hash:
+            return
+
+        target_commit_obj = self._load_object(target_commit_hash)
+        target_commit_data = Commit._deserialize_commit(target_commit_obj.content)
+
+        if target_commit_data.tree_hash:
+            self._restore_tree_recursive(target_commit_data.tree_hash, self.path)
+            # Update the index to match the state of the branch we just checked out
+            new_index = self._get_index_from_tree_recursive(
+                target_commit_data.tree_hash, self.path
+            )
+            self._save_index(new_index)
+
+    def _get_index_from_tree_recursive(self, tree_hash: str, path: Path):
+        index = {}
+        try:
+            tree_obj = self._load_object(tree_hash)
+            tree_data = Tree._deserialize_entries(tree_obj.content)
+            for mode, name, obj_hash in tree_data.entries:
+                file_path = path / name
+                if mode.startswith("100"):
+                    index[file_path.relative_to(self.path).as_posix()] = obj_hash
+                elif mode.startswith("400"):
+                    index.update(
+                        self._get_index_from_tree_recursive(obj_hash, file_path)
+                    )
+        except Exception as e:
+            print(f"Warning: Could not load tree {tree_hash}: {e}")
+        return index
+
+    def _restore_tree_recursive(self, tree_hash: str, path: Path):
+        try:
+            tree_obj = self._load_object(tree_hash)
+            tree_data = Tree._deserialize_entries(tree_obj.content)
+
+            for mode, name, obj_hash in tree_data.entries:
+                file_path = path / name
+                if mode.startswith("100"):
+                    blob_obj = self._load_object(obj_hash)
+                    blob = Blob(blob_obj.content)
+                    file_path.write_bytes(blob.content)
+                elif mode.startswith("400"):
+                    file_path.mkdir(exist_ok=True)
+                    self._restore_tree_recursive(obj_hash, file_path)
+        except Exception as e:
+            print(f"Warning: Could not load tree {tree_hash}: {e}")
+
+    def checkout(self, branch: str, create_branch: bool = False):
+        # get previous branch latest commit
+        previous_branch = self.get_current_branch()
+        files_to_clear = set()
+        try:
+            previous_commit_hash = self.get_branch_commit(previous_branch)
+            if previous_commit_hash:
+                previous_commit_obj = self._load_object(previous_commit_hash)
+                previous_commit_data = Commit._deserialize_commit(
+                    previous_commit_obj.content
+                )
+                if previous_commit_data.tree_hash:
+                    files_to_clear = self.get_files_from_tree_recursive(
+                        previous_commit_data.tree_hash
+                    )
+
+        except Exception as e:
+            files_to_clear = set()
+
+        # manage branch
+        branch_file = self.heads_dir / branch
+        if not branch_file.exists():
+            if create_branch:
+                if previous_commit_hash:
+                    self.set_branch_commit(
+                        current_branch=branch, commit_hash=previous_commit_hash
+                    )
+                    print(f"Created new branch {branch}")
+                else:
+                    print("No commits yet, cannot create branch")
+                    return
+            else:
+                print(f"Branch '{branch}' does not exist")
+                print(f"Use -b flag to create new branch")
+                return
+        self.head_file.write_text(f"ref: refs/heads/{branch}\n")
+
+        # restore working directory
+        if not create_branch:
+            self._restore_working_directory(branch, files_to_clear)
+        print(f"Switched to branch {branch}")
+
     def get_current_branch(self) -> str:
         if not self.head_file.exists():
             return "main"
@@ -310,7 +429,7 @@ class Repository:
     @property
     def _ignore_patterns(self) -> set[str]:
         """Always returns the fresh state of .kramignore"""
-        patterns = {".kram", ".git"}  # Hardcoded safety
+        patterns = {".kram"}  # Hardcoded safety
         if self.kram_ignore.exists():
             lines = self.kram_ignore.read_text().splitlines()
             patterns.update(

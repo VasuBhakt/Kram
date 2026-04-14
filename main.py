@@ -34,6 +34,18 @@ def main():
         "paths", nargs="+", help="Paths to files to remove"
     )  # nargs = + implies atleast one file is needed
 
+    # checkout parser
+    checkout_parser = subparsers.add_parser(
+        "checkout", help="Move to or create new branch"
+    )
+    checkout_parser.add_argument(
+        "-b",
+        "--create-branch",
+        action="store_true",
+        help="Create and switch to a new branch",
+    )
+    checkout_parser.add_argument("branch", help="Name of the branch to switch to")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -63,6 +75,11 @@ def main():
                 return
             for path in args.paths:
                 repo.remove_path(path)
+        elif args.command == "checkout":
+            if not repo.kram_dir.exists():
+                print("Not a kram repository")
+                return
+            repo.checkout(args.branch, args.create_branch)
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
