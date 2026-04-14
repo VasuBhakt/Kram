@@ -418,6 +418,42 @@ class Repository:
             self._restore_working_directory(branch, files_to_clear)
         print(f"Switched to branch {branch}")
 
+    def branch(self, branch_name: str, delete: bool = False):
+        if delete and branch_name:
+            branch_file = self.heads_dir / branch_name
+            if branch_file.exists():
+                if branch_name == self.get_current_branch():
+                    print(
+                        f"Branch '{branch_name}' is the current branch. Checkout to another branch first."
+                    )
+                    return
+                if branch_name == "main":
+                    print(f"Branch '{branch_name}' cannot be deleted")
+                    return
+                branch_file.unlink()
+                print(f"Deleted branch {branch_name}")
+            else:
+                print(f"Branch '{branch_name}' does not exist")
+            return
+        else:
+            current_branch = self.get_current_branch()
+            if branch_name:
+                branch_file = self.heads_dir / branch_name
+                if branch_file.exists():
+                    print(f"Branch '{branch_name}' already exists")
+                    return
+                current_branch_commit = self.get_branch_commit(current_branch)
+                if current_branch_commit:
+                    self.set_branch_commit(branch_name, current_branch_commit)
+                    print(f"Created new branch {branch_name}")
+                else:
+                    print("No commits yet, cannot create branch")
+            else:
+                branches = self.heads_dir.iterdir()
+                for branch in branches:
+                    current_marker = "*" if branch.name == current_branch else " "
+                    print(f"{branch.name}{current_marker}")
+
     def get_current_branch(self) -> str:
         if not self.head_file.exists():
             return "main"

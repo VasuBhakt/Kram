@@ -46,6 +46,17 @@ def main():
     )
     checkout_parser.add_argument("branch", help="Name of the branch to switch to")
 
+    # branch command
+    branch_parser = subparsers.add_parser("branch", help="List or manage branches")
+    branch_parser.add_argument(
+        "name",
+        nargs="?",
+        help="If provided, creates a new branch with this name if not exists",
+    )
+    branch_parser.add_argument(
+        "-d", "--delete", action="store_true", help="Delete specified branch"
+    )
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -80,6 +91,11 @@ def main():
                 print("Not a kram repository")
                 return
             repo.checkout(args.branch, args.create_branch)
+        elif args.command == "branch":
+            if not repo.kram_dir.exists():
+                print("Not a kram repository")
+                return
+            repo.branch(args.name, args.delete)
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
