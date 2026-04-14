@@ -57,6 +57,16 @@ def main():
         "-d", "--delete", action="store_true", help="Delete specified branch"
     )
 
+    # log command
+    log_parser = subparsers.add_parser("log", help="Show commit logs")
+    log_parser.add_argument(
+        "-n",
+        "--max-count",
+        type=int,
+        help="Number of commits to show",
+        default=10,
+    )
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -96,6 +106,12 @@ def main():
                 print("Not a kram repository")
                 return
             repo.branch(args.name, args.delete)
+        elif args.command == "log":
+            if not repo.kram_dir.exists():
+                print("Not a kram repository")
+                return
+            repo.log(args.max_count)
+
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)

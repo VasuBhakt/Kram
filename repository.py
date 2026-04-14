@@ -419,10 +419,11 @@ class Repository:
         print(f"Switched to branch {branch}")
 
     def branch(self, branch_name: str, delete: bool = False):
+        current_branch = self.get_current_branch()
         if delete and branch_name:
             branch_file = self.heads_dir / branch_name
             if branch_file.exists():
-                if branch_name == self.get_current_branch():
+                if branch_name == current_branch:
                     print(
                         f"Branch '{branch_name}' is the current branch. Checkout to another branch first."
                     )
@@ -453,6 +454,28 @@ class Repository:
                 for branch in branches:
                     current_marker = "*" if branch.name == current_branch else " "
                     print(f"{branch.name}{current_marker}")
+
+    def log(self, max_count: int = 10):
+        current_branch = self.get_current_branch()
+        current_branch_commit = self.get_branch_commit(current_branch)
+
+        if not current_branch_commit:
+            print("No commits yet")
+            return
+
+        count = 0
+        while current_branch_commit and count < max_count:
+            commit_obj = self._load_object(current_branch_commit)
+            commit_data = Commit._deserialize_commit(commit_obj.content)
+            print(f"Commit: {current_branch_commit}")
+            print(f"Message: {commit_data.message}")
+            print(f"Author: {commit_data.author}")
+            print(f"Date: {commit_data.timestamp}")
+            print()
+            current_branch_commit = (
+                commit_data.parent_hashes[0] if commit_data.parent_hashes else None
+            )
+            count += 1
 
     def get_current_branch(self) -> str:
         if not self.head_file.exists():
