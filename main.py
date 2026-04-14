@@ -67,6 +67,11 @@ def main():
         default=10,
     )
 
+    # status command
+    status_parser = subparsers.add_parser(
+        "status", help="Show status of the repository"
+    )
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -111,6 +116,11 @@ def main():
                 print("Not a kram repository")
                 return
             repo.log(args.max_count)
+        elif args.command == "status":
+            if not repo.kram_dir.exists():
+                print("Not a kram repository")
+                return
+            repo.status()
 
     except Exception as e:
         print(f"Error: {e}")

@@ -124,9 +124,14 @@ class Repository:
         blob = Blob(content)
         # store the blob object in .kram/objects i.e. the database
         blob_hash = self._store_object(blob)
-        # update index to include the file
+        # update index to include the file and its metadata for faster status checks
         index = self._load_index()
-        index[rel_path.as_posix()] = blob_hash
+        stat = full_path.stat()
+        index[rel_path.as_posix()] = {
+            "hash": blob_hash,
+            "size": stat.st_size,
+            "mtime": stat.st_mtime,
+        }
         self._save_index(index)
         print(f"Added {rel_path.as_posix()} to the index")
 
@@ -152,8 +157,13 @@ class Repository:
                 blob = Blob(content)
                 # store the blob object in .kram/objects i.e. the database
                 blob_hash = self._store_object(blob)
-                # update index
-                index[rel_path.as_posix()] = blob_hash
+                # update index with hash and metadata
+                stat = file_path.stat()
+                index[rel_path.as_posix()] = {
+                    "hash": blob_hash,
+                    "size": stat.st_size,
+                    "mtime": stat.st_mtime,
+                }
                 added_count += 1
                 print(f"Added {rel_path.as_posix()} to the index")
         self._save_index(index)
@@ -222,7 +232,9 @@ class Repository:
             return self._store_object(tree)
         dirs = {}
         files = {}
-        for file_path, blob_hash in index.items():
+        for file_path, entry in index.items():
+            # handle both old string index and new dict index
+            blob_hash = entry["hash"] if isinstance(entry, dict) else entry
             parts = file_path.split("/")
             if len(parts) == 1:
                 # file in root folder
@@ -350,7 +362,14 @@ class Repository:
             for mode, name, obj_hash in tree_data.entries:
                 file_path = path / name
                 if mode.startswith("100"):
-                    index[file_path.relative_to(self.path).as_posix()] = obj_hash
+                    # Record metadata from the restored file for faster status checks
+                    rel_path = file_path.relative_to(self.path).as_posix()
+                    stat = file_path.stat()
+                    index[rel_path] = {
+                        "hash": obj_hash,
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime,
+                    }
                 elif mode.startswith("400"):
                     index.update(
                         self._get_index_from_tree_recursive(obj_hash, file_path)
@@ -476,6 +495,90 @@ class Repository:
                 commit_data.parent_hashes[0] if commit_data.parent_hashes else None
             )
             count += 1
+
+    def _get_all_files(self):
+        files = []
+        for file in self.path.rglob("*"):
+            if file.is_file() and not self._should_ignore(file, self._ignore_patterns):
+                files.append(file.relative_to(self.path).as_posix())
+        return files
+
+    def status(self):
+        current_branch = self.get_current_branch()
+        print(f"On branch {current_branch}")
+        index = self._load_index()
+        all_files = self._get_all_files()
+        current_commit = self.get_branch_commit(current_branch)
+        new_files = []
+        modified_files = []
+        unstaged_files = []
+        untracked_files = []
+        deleted_files = []
+        # files staged for commit
+        # files staged for commit
+        last_index = {}
+        if current_commit:
+            try:
+                commit_obj = self._load_object(current_commit)
+                commit_data = Commit._deserialize_commit(commit_obj.content)
+                last_index = self._get_index_from_tree_recursive(
+                    commit_data.tree_hash, self.path
+                )
+            except Exception as e:
+                print(f"Warning: Could not load last commit: {e}")
+
+        # Compare Index vs Last Commit (or empty)
+        for file_path, entry in index.items():
+            file_hash = entry["hash"]
+            cached_size = entry["size"]
+            cached_mtime = entry["mtime"]
+
+            full_path = self.path / file_path
+            if file_path not in last_index:
+                new_files.append(file_path)
+            elif last_index[file_path]["hash"] != file_hash:
+                modified_files.append(file_path)
+            if full_path.exists():
+                stat = full_path.stat()
+                # FAST PATH: if size and mtime match, skip hashing
+                if stat.st_size == cached_size and stat.st_mtime == cached_mtime:
+                    continue
+
+                content = full_path.read_bytes()
+                current_hash = Blob(content).hash_object()
+                if current_hash != file_hash:
+                    unstaged_files.append(file_path)
+            else:
+                deleted_files.append(file_path)
+
+        if new_files or modified_files:
+            print("\nChanges to be committed:")
+            for file_path in new_files:
+                print(f"   New file: {file_path}")
+            for file_path in modified_files:
+                print(f"   Modified file: {file_path}")
+        elif not current_commit and not index:
+            print("\nNo commits yet. Nothing staged.")
+        else:
+            print("\nNo changes to commit. Branch up to date.")
+
+        if unstaged_files:
+            print("\nChanges not staged for commit:")
+            for file_path in unstaged_files:
+                print(f"   Modified file: {file_path}")
+        if deleted_files:
+            print("\nDeleted files:")
+            for file_path in deleted_files:
+                print(f"   Deleted file: {file_path}")
+
+        # untracked files
+        for file in all_files:
+            if file not in index:
+                untracked_files.append(file)
+        if untracked_files:
+            print("\nUntracked files:")
+            for file_path in untracked_files:
+                print(f"   Untracked file: {file_path}")
 
     def get_current_branch(self) -> str:
         if not self.head_file.exists():
