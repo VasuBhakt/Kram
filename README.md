@@ -87,3 +87,9 @@ This project was built as part of a deep-dive learning journey into the architec
 - <a href="https://github.com/rivaanranawat">Rivaan Ranawat</a> for the amazing video on building a VCS from scratch, which serves as the foundation of this project. The video can be found on his <a href="https://www.youtube.com/rivaanranawat">YouTube channel</a>.
 
 - Academic references from the **Git Internals** documentation.
+
+---
+
+## 🤓 Fun Fact
+
+The inspiration for the name of this project comes from the Sanskrit word ***krama***, which means Order.
