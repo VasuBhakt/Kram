@@ -11,6 +11,12 @@ A functional version control system built from scratch in Python.
 - **Branching**: Create, switch, and manage multiple lines of development.
 - **Content-Addressable**: Implements the core architecture of modern version control.
 
+## ⚙️ Prerequisites
+- Python 3.x (Required to run the Kram engine)
+
+## 🌐 Language Support
+Kram is language-agnostic and can be used to version control projects in any language (C++, JS, Go, etc.) or even non-code assets (images, videos, etc.)
+
 ## 🚀 Installation
 
 To install Kram locally and use it as a command-line tool:
@@ -21,7 +27,8 @@ To install Kram locally and use it as a command-line tool:
    ```bash
    pip install -e .
    ```
-
+  Now you can this globally as a Command-Line Tool! 
+  
 ## 🛠️ Usage
 
 ### Initialize a repository
