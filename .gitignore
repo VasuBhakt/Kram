@@ -11,6 +11,6 @@ venv/
 # Ignore VS Code settings
 .vscode/
 
-# test file
-hello_world.txt
-test_folder/
+# # test file
+# hello_world.txt
+# test_folder/

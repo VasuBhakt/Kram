@@ -72,6 +72,15 @@ def main():
         "status", help="Show status of the repository"
     )
 
+    # revert command
+    revert_parser = subparsers.add_parser(
+        "revert",
+        help="Revert to previous commits. This will NOT create a new commit, just stage the changes from the particular commit which can then be commited manually.",
+    )
+    revert_parser.add_argument(
+        "--commit", "-c", help="Commit hash to revert to", required=True
+    )
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -121,6 +130,11 @@ def main():
                 print("Not a kram repository")
                 return
             repo.status()
+        elif args.command == "revert":
+            if not repo.kram_dir.exists():
+                print("Not a kram repository")
+                return
+            repo.revert(args.commit)
 
     except Exception as e:
         print(f"Error: {e}")

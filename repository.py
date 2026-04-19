@@ -113,11 +113,18 @@ class Repository:
 
     def _add_file(self, path: str, current_ignore_patterns: set[str]):
         full_path = self.path / path
-        if not full_path.exists():
-            raise FileNotFoundError(f"File not found: {full_path}")
         rel_path = full_path.relative_to(self.path)
         if self._should_ignore(rel_path, ignore_patterns=current_ignore_patterns):
             return
+        index = self._load_index()
+        if not full_path.exists():
+            if rel_path.as_posix() in index:
+                del index[rel_path.as_posix()]
+                print(f"Removed missing file {rel_path.as_posix()} from the index")
+                self._save_index(index)
+                return
+            else:
+                raise FileNotFoundError(f"File not found: {full_path}")
         # read the file content
         content = full_path.read_bytes()
         # create BLOB object from the content
@@ -125,7 +132,7 @@ class Repository:
         # store the blob object in .kram/objects i.e. the database
         blob_hash = self._store_object(blob)
         # update index to include the file and its metadata for faster status checks
-        index = self._load_index()
+
         stat = full_path.stat()
         index[rel_path.as_posix()] = {
             "hash": blob_hash,
@@ -166,6 +173,18 @@ class Repository:
                 }
                 added_count += 1
                 print(f"Added {rel_path.as_posix()} to the index")
+
+        # remove missing files
+        missing_file = 0
+        for tracked_path in list(index.keys()):
+            if not (self.path / tracked_path).exists():
+                del index[tracked_path]
+                missing_file += 1
+                print(f"Removed missing file {tracked_path} from the index")
+
+        if missing_file > 0:
+            print(f"Removed {missing_file} missing files from index")
+
         self._save_index(index)
         print(f"Added {added_count} files from {path} to the index")
 
@@ -200,7 +219,13 @@ class Repository:
 
     def add_path(self, path: str):
         full_path = self.path / path
+        index = self._load_index()
         if not full_path.exists():
+            if path in index:
+                del index[path]
+                print(f"Removed missing file {path} from the index")
+                self._save_index(index)
+                return
             print(f"File not found: {full_path}")
             return
         # load current ignore patterns
@@ -288,9 +313,6 @@ class Repository:
         parent_hashes = [parent_commit] if parent_commit else []
 
         index = self._load_index()
-        if not index:
-            print(f"nothing to commit, working tree clean")
-            return None
 
         if parent_commit:
             parent_commit_obj = self._load_object(parent_commit)
@@ -328,7 +350,7 @@ class Repository:
             print(f"Warning: Could not load tree {tree_hash}: {e}")
         return files
 
-    def _restore_working_directory(self, branch: str, files_to_clear: set[str]):
+    def _clear_files(self, files_to_clear: set[str]):
         # remove files from previous branch
         if files_to_clear:
             for rel_path in sorted(files_to_clear):
@@ -336,23 +358,41 @@ class Repository:
                 try:
                     if file_path.is_file():
                         file_path.unlink()
+                        # clear ghost folders
+                        parent = file_path.parent
+                        while parent != self.path:
+                            if not any(parent.iterdir()):
+                                parent.rmdir()
+                                parent = parent.parent
+                            else:
+                                break
                 except Exception as e:
                     print(f"Warning: Could not remove file {file_path}: {e}")
 
-        target_commit_hash = self.get_branch_commit(branch)
-        if not target_commit_hash:
-            return
-
+    def _restore_working_directory(
+        self, files_to_clear: set[str], target_commit_hash: str
+    ):
+        current_index = self._load_index()
         target_commit_obj = self._load_object(target_commit_hash)
         target_commit_data = Commit._deserialize_commit(target_commit_obj.content)
+        target_files = self._get_tree_files_dict(target_commit_data.tree_hash)
 
-        if target_commit_data.tree_hash:
-            self._restore_tree_recursive(target_commit_data.tree_hash, self.path)
-            # Update the index to match the state of the branch we just checked out
-            new_index = self._get_index_from_tree_recursive(
-                target_commit_data.tree_hash, self.path
-            )
-            self._save_index(new_index)
+        to_delete = set(current_index.keys()) - set(target_files.keys())
+        self._clear_files(to_delete)
+
+        for rel_path, blob_hash in target_files.items():
+            current_entry = current_index.get(rel_path, {})
+            current_hash = current_entry.get("hash")
+            if current_hash != blob_hash:
+                file_path = self.path / rel_path
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                blob_obj = self._load_object(blob_hash)
+                file_path.write_bytes(blob_obj.content)
+
+        new_index = self._get_index_from_tree_recursive(
+            target_commit_data.tree_hash, self.path
+        )
+        self._save_index(new_index)
 
     def _get_index_from_tree_recursive(self, tree_hash: str, path: Path):
         index = {}
@@ -364,12 +404,17 @@ class Repository:
                 if mode.startswith("100"):
                     # Record metadata from the restored file for faster status checks
                     rel_path = file_path.relative_to(self.path).as_posix()
-                    stat = file_path.stat()
-                    index[rel_path] = {
+                    entry = {
                         "hash": obj_hash,
-                        "size": stat.st_size,
-                        "mtime": stat.st_mtime,
+                        "size": 0,
+                        "mtime": 0,
                     }
+                    if file_path.exists():
+                        stat = file_path.stat()
+                        entry["size"] = stat.st_size
+                        entry["mtime"] = stat.st_mtime
+
+                    index[rel_path] = entry
                 elif mode.startswith("400"):
                     index.update(
                         self._get_index_from_tree_recursive(obj_hash, file_path)
@@ -395,25 +440,28 @@ class Repository:
         except Exception as e:
             print(f"Warning: Could not load tree {tree_hash}: {e}")
 
+    def _get_files_set_from_index(self):
+        index = self._load_index()
+        return set(index.keys())
+
+    def _get_tree_files_dict(self, tree_hash: str, prefix: str = "") -> dict[str, str]:
+        files = {}
+        tree_obj = self._load_object(tree_hash)
+        tree_data = Tree._deserialize_entries(tree_obj.content)
+        for mode, name, obj_hash in tree_data.entries:
+            full_name = f"{prefix}{name}"
+            full_path = Path(full_name)
+            if mode.startswith("100"):
+                files[full_path.as_posix()] = obj_hash
+            elif mode.startswith("400"):
+                files.update(self._get_tree_files_dict(obj_hash, f"{full_name}/"))
+        return files
+
     def checkout(self, branch: str, create_branch: bool = False):
         # get previous branch latest commit
         previous_branch = self.get_current_branch()
-        files_to_clear = set()
-        try:
-            previous_commit_hash = self.get_branch_commit(previous_branch)
-            if previous_commit_hash:
-                previous_commit_obj = self._load_object(previous_commit_hash)
-                previous_commit_data = Commit._deserialize_commit(
-                    previous_commit_obj.content
-                )
-                if previous_commit_data.tree_hash:
-                    files_to_clear = self.get_files_from_tree_recursive(
-                        previous_commit_data.tree_hash
-                    )
-
-        except Exception as e:
-            files_to_clear = set()
-
+        previous_commit_hash = self.get_branch_commit(previous_branch)
+        files_to_clear = self._get_files_set_from_index()
         # manage branch
         branch_file = self.heads_dir / branch
         if not branch_file.exists():
@@ -434,7 +482,8 @@ class Repository:
 
         # restore working directory
         if not create_branch:
-            self._restore_working_directory(branch, files_to_clear)
+            target_commit_hash = self.get_branch_commit(branch)
+            self._restore_working_directory(files_to_clear, target_commit_hash)
         print(f"Switched to branch {branch}")
 
     def branch(self, branch_name: str, delete: bool = False):
@@ -579,6 +628,27 @@ class Repository:
             print("\nUntracked files:")
             for file_path in untracked_files:
                 print(f"   Untracked file: {file_path}")
+
+    # def _get_files_set_from_index():
+    #     index = self._load_index()
+
+    def revert(self, commit_hash: str):
+        # get current branch
+        current_branch = self.get_current_branch()
+        try:
+            commit_obj = self._load_object(commit_hash)
+            if commit_obj.obj_type != "commit":
+                print(
+                    f"Error: Object {commit_hash} is a {commit_obj.obj_type}, not a commit."
+                )
+        except Exception as e:
+            print(f"Commit not found")
+            return
+        # delete current files
+        files_to_clear = self._get_files_set_from_index()
+        # restore previous commit stage
+        self._restore_working_directory(files_to_clear, commit_hash)
+        print(f"Reverted to commit {commit_hash}. Changes staged for commit.")
 
     def get_current_branch(self) -> str:
         if not self.head_file.exists():
