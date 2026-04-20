@@ -611,7 +611,7 @@ class Repository:
                 print(f"   New file: {file_path}")
             for file_path in modified_files:
                 print(f"   Modified file: {file_path}")
-            for file_path in deleted_files:
+            for file_path in staged_deleted_files:
                 print(f"   Deleted file: {file_path}")
         elif not current_commit and not index:
             print("\nNo commits yet. Nothing staged.")
@@ -653,6 +653,26 @@ class Repository:
         # restore previous commit stage
         self._restore_working_directory(files_to_clear, commit_hash)
         print(f"Reverted to commit {commit_hash}. Changes staged for commit.")
+
+    def reset(self, commit_hash: str):
+        # get current branch
+        current_branch = self.get_current_branch()
+        try:
+            commit_obj = self._load_object(commit_hash)
+            if commit_obj.obj_type != "commit":
+                print(
+                    f"Error: Object {commit_hash} is a {commit_obj.obj_type}, not a commit."
+                )
+                return 
+        except Exception as e:
+            print(f"Commit not found")
+            return
+        # delete current files_
+        files_to_clear = self._get_files_set_from_index()
+        # restore previous commit stage
+        self._restore_working_directory(files_to_clear, commit_hash)
+        self.set_branch_commit(current_branch, commit_hash)
+        print(f"Reset to commit {commit_hash}. Branch {current_branch} updated.")
 
     def get_current_branch(self) -> str:
         if not self.head_file.exists():

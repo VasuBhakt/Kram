@@ -81,6 +81,15 @@ def main():
         "--commit", "-c", help="Commit hash to revert to", required=True
     )
 
+    # reset parser
+    reset_parser = subparsers.add_parser(
+        "reset",
+        help="Reset to previous commits. This will HARD RESET the branch to the specified commit. All data commited after specified commit will be lost, SO BE CAUTIOUS. ",
+    )
+    reset_parser.add_argument(
+        "--commit", "-c", help="Commit hash to reset to", required=True
+    )
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -135,6 +144,11 @@ def main():
                 print("Not a kram repository")
                 return
             repo.revert(args.commit)
+        elif args.command == "reset":
+            if not repo.kram_dir.exists():
+                print("Not a kram repository")
+                return
+            repo.reset(args.commit)
 
     except Exception as e:
         print(f"Error: {e}")
