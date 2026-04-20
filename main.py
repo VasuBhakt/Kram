@@ -84,7 +84,7 @@ def main():
     # reset parser
     reset_parser = subparsers.add_parser(
         "reset",
-        help="Reset to previous commits. This will HARD RESET the branch to the specified commit. All data commited after specified commit will be lost, SO BE CAUTIOUS. ",
+        help="Reset to previous commits. Can cause loss of data. Use with caution! ",
     )
     reset_parser.add_argument(
         "--commit", "-c", help="Commit hash to reset to", required=True
