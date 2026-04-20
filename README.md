@@ -10,6 +10,7 @@ A functional version control system built from scratch in Python.
 - **Metadata Caching**: Fast `status` command that skips hashing for unchanged files.
 - **Branching**: Create, switch, and manage multiple lines of development.
 - **Content-Addressable**: Implements the core architecture of modern version control.
+- **History management**: Allows moving back to history commits and provides references logs.
 
 ## ⚙️ Prerequisites
 - Python 3.x (Required to run the Kram engine)
@@ -48,6 +49,7 @@ kram status
 ```bash
 kram add <file_path> <folder_path> ...
 kram add .   # add all files to the staging area
+kram rm <file_path>  # remove file_path from staging area
 ```
 
 ### Commit changes
@@ -69,6 +71,26 @@ kram checkout -b <branch_name> # Create and switch
 ```bash
 kram log -n 10 # Shows last 10 commits optional
 ```
+
+### Revert to previous commit stage
+
+```bash
+kram revert -c <commit_hash> # restore working directory of commit and ONLY STAGES THE CHANGES, does not create new commit
+```
+
+### Reset commit
+
+```bash
+kram reset -c <commit_hash> # head of branch is moved back. Files can be lost.
+```
+
+### Commit reference logs
+
+```bash
+kram reflog # check commit logs for current branch. Can be used for recovering lost files due to reset
+```
+
+**Use ```kram --help``` for getting more info on the available commands**
 
 ## 🏗️ Architecture
 
