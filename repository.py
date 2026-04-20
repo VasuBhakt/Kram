@@ -562,9 +562,9 @@ class Repository:
         modified_files = []
         unstaged_files = []
         untracked_files = []
-        deleted_files = []
-        # files staged for commit
-        # files staged for commit
+        unstaged_deleted_files = []
+        staged_deleted_files = []
+
         last_index = {}
         if current_commit:
             try:
@@ -598,27 +598,33 @@ class Repository:
                 if current_hash != file_hash:
                     unstaged_files.append(file_path)
             else:
-                deleted_files.append(file_path)
+                unstaged_deleted_files.append(file_path)
+        
+        # Compare Last Commit vs Working Directory
+        for file_path, entry in last_index.items():
+            if file_path not in index:
+                staged_deleted_files.append(file_path)
 
-        if new_files or modified_files:
+        if new_files or modified_files or staged_deleted_files:
             print("\nChanges to be committed:")
             for file_path in new_files:
                 print(f"   New file: {file_path}")
             for file_path in modified_files:
                 print(f"   Modified file: {file_path}")
+            for file_path in deleted_files:
+                print(f"   Deleted file: {file_path}")
         elif not current_commit and not index:
             print("\nNo commits yet. Nothing staged.")
         else:
             print("\nNo changes to commit. Branch up to date.")
 
-        if unstaged_files:
+        if unstaged_files or unstaged_deleted_files:
             print("\nChanges not staged for commit:")
             for file_path in unstaged_files:
                 print(f"   Modified file: {file_path}")
-        if deleted_files:
-            print("\nDeleted files:")
-            for file_path in deleted_files:
+            for file_path in unstaged_deleted_files:
                 print(f"   Deleted file: {file_path}")
+            
 
         # untracked files
         for file in all_files:
@@ -629,8 +635,6 @@ class Repository:
             for file_path in untracked_files:
                 print(f"   Untracked file: {file_path}")
 
-    # def _get_files_set_from_index():
-    #     index = self._load_index()
 
     def revert(self, commit_hash: str):
         # get current branch
