@@ -13,9 +13,11 @@ A functional version control system built from scratch in Python.
 - **History management**: Allows moving back to history commits and provides references logs.
 
 ## ⚙️ Prerequisites
+
 - Python 3.x (Required to run the Kram engine)
 
 ## 🌐 Language Support
+
 Kram is language-agnostic and can be used to version control projects in any language (C++, JS, Go, etc.) or even non-code assets (images, videos, etc.)
 
 ## 🚀 Installation
@@ -28,8 +30,8 @@ To install Kram locally and use it as a command-line tool:
    ```bash
    pip install -e .
    ```
-  Now you can this globally as a Command-Line Tool! 
-  
+   Now you can use this globally as a Command-Line Tool!
+
 ## 🛠️ Usage
 
 ### Initialize a repository
@@ -81,16 +83,16 @@ kram revert -c <commit_hash> # restore working directory of commit and ONLY STAG
 ### Reset commit
 
 ```bash
-kram reset -c <commit_hash> # head of branch is moved back. Files can be lost.
+kram reset -c <commit_hash> -m "Reason for reset" # Head of branch is moved back. While destructive to the current state, previous commits can still be recovered using the reflog.
 ```
 
 ### Commit reference logs
 
 ```bash
-kram reflog # check commit logs for current branch. Can be used for recovering lost files due to reset
+kram reflog # View history of pointer movements for the current branch. Essential for recovering from accidental resets.
 ```
 
-**Use ```kram --help``` for getting more info on the available commands**
+**Use `kram --help` for getting more info on the available commands**
 
 ## 🏗️ Architecture
 
@@ -121,4 +123,4 @@ This project was built as part of a deep-dive learning journey into the architec
 
 ## 🤓 Fun Fact
 
-The inspiration for the name of this project comes from the Sanskrit word ***krama***, which means Order.
+The inspiration for the name of this project comes from the Sanskrit word **_krama_**, which means Order.
