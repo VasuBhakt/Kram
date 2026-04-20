@@ -4,6 +4,7 @@ from pathlib import Path
 import platform
 import ctypes
 import fnmatch
+from datetime import datetime
 
 DEFAULT_IGNORES = """# Kram Ignore File
 # For directories, DON'T end it with a trailing slash (e.g. venv not venv/). This could end disastrously
@@ -37,6 +38,11 @@ class Repository:
         self.heads_dir = self.refs_dir / "heads"
         # .kram/index
         self.index_file = self.kram_dir / "index"
+        # .kram/logs
+        self.logs_dir = self.kram_dir / "logs"
+        # .kram/logs/heads
+        self.logs_heads_dir = self.logs_dir / "heads"
+        
 
     def init(self) -> bool:
         if self.kram_dir.exists():
@@ -58,6 +64,8 @@ class Repository:
         self.objects_dir.mkdir()
         self.refs_dir.mkdir()
         self.heads_dir.mkdir()
+        self.logs_dir.mkdir()
+        self.logs_heads_dir.mkdir()
 
         # create initial HEAD  pointing to a branch
         self.head_file.write_text("ref: refs/heads/main\n")
@@ -304,6 +312,11 @@ class Repository:
         branch_file = self.heads_dir / current_branch
         branch_file.write_text(commit_hash + "\n")
 
+    def _log_commit(self, current_branch: str, action:str, message: str, author: str, current_commit_hash: str, previous_commit_hash: str = "*"):
+        log_file = self.logs_heads_dir / current_branch
+        with log_file.open("a") as f:
+            f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {action}:  {previous_commit_hash} -> {current_commit_hash}   author: {author}   message: {message}\n")
+
     def commit(self, message: str, author: str = "Kram User"):
         # create a tree object from the index (staging area)
         tree_hash = self._create_tree_from_index()
@@ -330,6 +343,8 @@ class Repository:
         )
         commit_hash = self._store_object(commit)
         self.set_branch_commit(current_branch, commit_hash)
+
+        self._log_commit(current_branch, "commit", message, author,commit_hash, (parent_commit or "*"))
         print(f"Created commit {commit_hash} on branch {current_branch}")
         return commit_hash
 
@@ -654,9 +669,10 @@ class Repository:
         self._restore_working_directory(files_to_clear, commit_hash)
         print(f"Reverted to commit {commit_hash}. Changes staged for commit.")
 
-    def reset(self, commit_hash: str):
+    def reset(self, commit_hash: str, message: str, author: str = "Kram User"):
         # get current branch
         current_branch = self.get_current_branch()
+        parent_commit = self.get_branch_commit(current_branch)
         try:
             commit_obj = self._load_object(commit_hash)
             if commit_obj.obj_type != "commit":
@@ -672,7 +688,18 @@ class Repository:
         # restore previous commit stage
         self._restore_working_directory(files_to_clear, commit_hash)
         self.set_branch_commit(current_branch, commit_hash)
-        print(f"Reset to commit {commit_hash}. Branch {current_branch} updated.")
+        self._log_commit(current_branch, "reset", message, author, commit_hash, (parent_commit or "*"))
+        print(f"Reset to commit {commit_hash}. Branch {current_branch} updated. {author}: {message}")
+
+    def reflog(self):
+        branch = self.get_current_branch()
+        log_file = self.logs_heads_dir / branch
+        if not log_file.exists():
+            print(f"No reflog found for branch {branch}")
+            return
+        with log_file.open("r") as f:
+            for line in reversed(list(f)):
+                print(line.strip())
 
     def get_current_branch(self) -> str:
         if not self.head_file.exists():

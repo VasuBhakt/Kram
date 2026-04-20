@@ -89,6 +89,18 @@ def main():
     reset_parser.add_argument(
         "--commit", "-c", help="Commit hash to reset to", required=True
     )
+    reset_parser.add_argument(
+        "-m", "--message", help="Message to reset", required=True
+    )
+    reset_parser.add_argument(
+        "-a", "--author", help="Author of the reset"
+    )
+
+    # reflog parser
+    reflog_parser = subparsers.add_parser(
+        "reflog", help="Show commit logs and commit history"
+    )
+    
 
     args = parser.parse_args()
     if not args.command:
@@ -148,7 +160,13 @@ def main():
             if not repo.kram_dir.exists():
                 print("Not a kram repository")
                 return
-            repo.reset(args.commit)
+            author = args.author or "Kram User"
+            repo.reset(args.commit, args.message, author)
+        elif args.command == "reflog":
+            if not repo.kram_dir.exists():
+                print("Not a kram repository")
+                return
+            repo.reflog()
 
     except Exception as e:
         print(f"Error: {e}")
