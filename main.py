@@ -100,6 +100,23 @@ def main():
     reflog_parser = subparsers.add_parser(
         "reflog", help="Show commit logs and commit history"
     )
+
+    # merge parser
+    merge_parser = subparsers.add_parser(
+        "merge", help="Merge branches into current branch"
+    )
+    merge_parser.add_argument(
+        "-b","--branch", help="Name of the branch to merge", required=True
+    )
+    merge_parser.add_argument(
+        "-m", "--message", help="Message to merge", required=True
+    )
+    merge_parser.add_argument(
+        "-a", "--author", help="Author of the merge"
+    )
+    merge_parser.add_argument(
+        "--override", action="store_true", help="From branch takes precedence over current branch"
+    )
     
 
     args = parser.parse_args()
@@ -167,6 +184,12 @@ def main():
                 print("Not a kram repository")
                 return
             repo.reflog()
+        elif args.command == "merge":
+            if not repo.kram_dir.exists():
+                print("Not a kram repository")
+                return
+            author = args.author or "Kram User"
+            repo.merge(args.branch, args.message, author, args.override)
 
     except Exception as e:
         print(f"Error: {e}")

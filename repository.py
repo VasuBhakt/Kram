@@ -312,18 +312,25 @@ class Repository:
         branch_file = self.heads_dir / current_branch
         branch_file.write_text(commit_hash + "\n")
 
-    def _log_commit(self, current_branch: str, action:str, message: str, author: str, current_commit_hash: str, previous_commit_hash: str = "*"):
+    def _log_commit_reset(self, current_branch: str, action:str, message: str, author: str, current_commit_hash: str, previous_commit_hash: str = "*"):
         log_file = self.logs_heads_dir / current_branch
         with log_file.open("a") as f:
             f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {action}:  {previous_commit_hash} -> {current_commit_hash}   author: {author}   message: {message}\n")
 
-    def commit(self, message: str, author: str = "Kram User"):
+    def _log_merge(self, to_branch: str, from_branch: str, to_commit: str, new_commit: str, message: str, author: str = "Kram User", from_commit: str = "*" ):
+        log_file = self.logs_heads_dir / to_branch
+        with log_file.open("a") as f:
+            f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} merge::  {from_branch}:{from_commit} -> {to_branch}:{to_commit} = {new_commit}   author: {author}   message: {message}\n")
+
+    def commit(self, message: str, author: str = "Kram User", additional_parents: list[str] = None):
         # create a tree object from the index (staging area)
         tree_hash = self._create_tree_from_index()
 
         current_branch = self.get_current_branch()
         parent_commit = self.get_branch_commit(current_branch)
         parent_hashes = [parent_commit] if parent_commit else []
+        if additional_parents:
+            parent_hashes.extend(additional_parents)
 
         index = self._load_index()
 
@@ -344,7 +351,7 @@ class Repository:
         commit_hash = self._store_object(commit)
         self.set_branch_commit(current_branch, commit_hash)
 
-        self._log_commit(current_branch, "commit", message, author,commit_hash, (parent_commit or "*"))
+        self._log_commit_reset(current_branch, "commit", message, author,commit_hash, (parent_commit or "*"))
         print(f"Created commit {commit_hash} on branch {current_branch}")
         return commit_hash
 
@@ -397,7 +404,7 @@ class Repository:
 
         for rel_path, blob_hash in target_files.items():
             current_entry = current_index.get(rel_path, {})
-            current_hash = current_entry.get("hash")
+            current_hash = current_entry.get("hash") if isinstance(current_entry, dict) else current_entry
             if current_hash != blob_hash:
                 file_path = self.path / rel_path
                 file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -477,6 +484,9 @@ class Repository:
         previous_branch = self.get_current_branch()
         previous_commit_hash = self.get_branch_commit(previous_branch)
         files_to_clear = self._get_files_set_from_index()
+        if previous_branch == branch:
+            print(f"Already on branch {branch}")
+            return
         # manage branch
         branch_file = self.heads_dir / branch
         if not branch_file.exists():
@@ -592,10 +602,16 @@ class Repository:
                 print(f"Warning: Could not load last commit: {e}")
 
         # Compare Index vs Last Commit (or empty)
+        # Compare Index vs Last Commit (or empty)
         for file_path, entry in index.items():
-            file_hash = entry["hash"]
-            cached_size = entry["size"]
-            cached_mtime = entry["mtime"]
+            if isinstance(entry, dict):
+                file_hash = entry["hash"]
+                cached_size = entry["size"]
+                cached_mtime = entry["mtime"]
+            else:
+                file_hash = entry
+                cached_size = 0
+                cached_mtime = 0
 
             full_path = self.path / file_path
             if file_path not in last_index:
@@ -688,7 +704,7 @@ class Repository:
         # restore previous commit stage
         self._restore_working_directory(files_to_clear, commit_hash)
         self.set_branch_commit(current_branch, commit_hash)
-        self._log_commit(current_branch, "reset", message, author, commit_hash, (parent_commit or "*"))
+        self._log_commit_reset(current_branch, "reset", message, author, commit_hash, (parent_commit or "*"))
         print(f"Reset to commit {commit_hash}. Branch {current_branch} updated. {author}: {message}")
 
     def reflog(self):
@@ -697,10 +713,163 @@ class Repository:
         if not log_file.exists():
             print(f"No reflog found for branch {branch}")
             return
+        print(f"Reflog for branch {branch}:\n")
         with log_file.open("r") as f:
             for line in reversed(list(f)):
                 print(line.strip())
 
+    def _find_merge_base(self, commit1_hash: str, commit2_hash: str) -> str:
+        if not commit1_hash or not commit2_hash:
+            return None
+            
+        def get_ancestors(commit_hash):
+            ancestors = set()
+            queue = [commit_hash]
+            while queue:
+                curr = queue.pop(0)
+                if curr not in ancestors:
+                    ancestors.add(curr)
+                    try:
+                        obj = self._load_object(curr)
+                        data = Commit._deserialize_commit(obj.content)
+                        queue.extend(data.parent_hashes)
+                    except:
+                        pass
+            return ancestors
+
+        ancestors1 = get_ancestors(commit1_hash)
+        
+        # Walk back from commit2 and find first shared ancestor
+        queue = [commit2_hash]
+        visited = set()
+        while queue:
+            curr = queue.pop(0)
+            if curr in ancestors1:
+                return curr
+            if curr not in visited:
+                visited.add(curr)
+                try:
+                    obj = self._load_object(curr)
+                    data = Commit._deserialize_commit(obj.content)
+                    queue.extend(data.parent_hashes)
+                except:
+                    pass
+        return None
+
+    def merge(self, branch: str, message: str, author: str = "Kram User", override: bool = False):
+        current_branch = self.get_current_branch()
+        to_commit_hash = self.get_branch_commit(current_branch)
+        from_commit_hash = self.get_branch_commit(branch)
+
+        if not from_commit_hash:
+            print(f"Branch '{branch}' not found or has no commits.")
+            return
+
+        if not to_commit_hash:
+            print("Current branch has no commits. Taking everything from source branch.")
+            self._restore_working_directory(set(), from_commit_hash)
+            self.set_branch_commit(current_branch, from_commit_hash)
+            return
+
+        base_commit_hash = self._find_merge_base(to_commit_hash, from_commit_hash)
+        
+        if not base_commit_hash:
+            print("No common ancestor found. Performing unrelated histories merge (taking source).")
+            base_tree = {}
+        else:
+            base_obj = self._load_object(base_commit_hash)
+            base_data = Commit._deserialize_commit(base_obj.content)
+            base_tree = self._get_tree_files_dict(base_data.tree_hash)
+
+        if base_commit_hash == from_commit_hash:
+            print(f"Already up to date.")
+            return
+        
+        if base_commit_hash == to_commit_hash:
+            print(f"Fast-forwarding to {from_commit_hash}")
+            self._restore_working_directory(self._get_files_set_from_index(), from_commit_hash)
+            self.set_branch_commit(current_branch, from_commit_hash)
+            return
+
+        # 3-way merge
+        to_obj = self._load_object(to_commit_hash)
+        to_data = Commit._deserialize_commit(to_obj.content)
+        to_tree = self._get_tree_files_dict(to_data.tree_hash)
+
+        from_obj = self._load_object(from_commit_hash)
+        from_data = Commit._deserialize_commit(from_obj.content)
+        from_tree = self._get_tree_files_dict(from_data.tree_hash)
+
+        all_files = set(base_tree.keys()) | set(to_tree.keys()) | set(from_tree.keys())
+        
+        index = self._load_index()
+        conflicts = []
+        files_to_restore = {}
+        files_to_delete = []
+
+        for file_path in all_files:
+            b = base_tree.get(file_path)
+            t = to_tree.get(file_path)
+            f = from_tree.get(file_path)
+
+            if f == t:
+                # Both match, or both deleted. No action needed.
+                continue
+            
+            if f == b:
+                # No change in source. Keep current (t).
+                continue
+                
+            if t == b:
+                # Source changed it, we didn't. Take source (f).
+                if f:
+                    files_to_restore[file_path] = f
+                else:
+                    files_to_delete.append(file_path)
+                continue
+            
+            # Both changed and are different
+            if override:
+                print(f"Conflict in {file_path}, overriding with branch {branch}")
+                if f:
+                    files_to_restore[file_path] = f
+                else:
+                    files_to_delete.append(file_path)
+            else:
+                print(f"CONFLICT in {file_path}")
+                conflicts.append(file_path)
+
+        if conflicts:
+            print("Merge aborted due to conflicts. Use --override to force merge.")
+            return
+
+        # Apply changes
+        for file_path in files_to_delete:
+            if file_path in index:
+                del index[file_path]
+            p = self.path / file_path
+            if p.exists():
+                p.unlink()
+
+        for file_path, blob_hash in files_to_restore.items():
+            full_path = self.path / file_path
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            blob_obj = self._load_object(blob_hash)
+            full_path.write_bytes(blob_obj.content)
+            
+            stat = full_path.stat()
+            index[file_path] = {
+                "hash": blob_hash,
+                "size": stat.st_size,
+                "mtime": stat.st_mtime
+            }
+
+        self._save_index(index)
+        print(f"Successfully Merged branch {branch} into {current_branch}")
+        new_commit = self.commit(message, author, additional_parents=[from_commit_hash])
+        self._log_merge(from_branch=branch, to_branch=current_branch, from_commit=from_commit_hash, to_commit=to_commit_hash, new_commit=new_commit, message=message, author=author )
+
+        
     def get_current_branch(self) -> str:
         if not self.head_file.exists():
             return "main"
