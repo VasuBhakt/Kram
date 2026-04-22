@@ -10,7 +10,8 @@ A functional version control system built from scratch in Python.
 - **Metadata Caching**: Fast `status` command that skips hashing for unchanged files.
 - **Branching**: Create, switch, and manage multiple lines of development.
 - **Content-Addressable**: Implements the core architecture of modern version control.
-- **History management**: Allows moving back to history commits and provides references logs.
+- **3-Way Merge**: Intelligent merging of branches using common ancestor detection and conflict handling.
+- **History management**: Allows moving back to history commits and provides reference logs.
 
 ## ⚙️ Prerequisites
 
@@ -90,6 +91,13 @@ kram reset -c <commit_hash> -m "Reason for reset" # Head of branch is moved back
 
 ```bash
 kram reflog # View history of pointer movements for the current branch. Essential for recovering from accidental resets.
+```
+
+### Merging
+
+```bash
+kram merge -b <source_branch> -m "Merge message"
+kram merge -b <source_branch> -m "Merge message" --override # Force merge in case of conflicts
 ```
 
 **Use `kram --help` for getting more info on the available commands**
