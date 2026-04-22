@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kram"
-version = "0.1.0"
+version = "1.0.0"
 description = "A lightweight, Git-inspired version control system built from scratch in Python."
 authors = [
     {name = "Swastik Bose a.k.a VasuBhakt"}
