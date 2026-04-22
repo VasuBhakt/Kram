@@ -113,6 +113,41 @@ Kram follows the following object model:
 
 ---
 
+## 🧬 Technical Deep Dive
+
+### 3-Way Merge Algorithm
+
+Kram implements a robust merging system that avoids simple overwrites:
+
+1. **Ancestor Detection**: Uses Breadth-First Search (BFS) to find the Lowest Common Ancestor (LCA) between two branches.
+2. **State Comparison**: Compares the Base, Target, and Source trees.
+3. **Automatic Resolution**: Changes are merged automatically if they don't overlap (e.g., File A changed in Branch 1, File B changed in Branch 2).
+4. **Conflict Safety**: If the same file is modified differently in both branches, Kram halts and requires an `--override` to proceed, preventing accidental data loss.
+
+### Merkle DAG Architecture
+
+The core data structure of Kram is a **Merkle Directed Acyclic Graph (DAG)**.
+
+- **Leaves (Blobs)**: Store the actual file contents.
+- **Nodes (Trees)**: Store directory maps (filenames to hashes).
+- **Root (Commit)**: Points to a root Tree.
+
+This hierarchy ensures absolute data integrity. Because a Tree's hash is derived from the hashes of its children, any change to a file cascades up the graph, altering the Root Tree's hash. This allows Kram to verify the state of the entire project by checking only the top-level commit hash.
+
+### Performance Optimized Status
+
+The `status` command is designed for speed. Instead of hashing every file every time:
+
+- It caches the `size` and `mtime` (last modified time) in the Index.
+- It only performs SHA-256 hashing if the metadata indicates a file has been touched.
+- This results in O(1) performance for unchanged files.
+
+### Content-Addressable Storage
+
+Kram uses a partitioned object store (`.kram/objects/ab/cdef...`) to avoid filesystem bottlenecks that occur when thousands of files are stored in a single directory. All files are compressed using `zlib` to minimize the on-disk footprint.
+
+---
+
 ## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE.txt) file for details.
