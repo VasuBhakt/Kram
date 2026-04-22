@@ -2,7 +2,7 @@
 
 A functional version control system built from scratch in Python.
 
-**Kram** is a functional VCS that uses a content-addressable storage system (Blobs, Trees, and Commits) similar to Git. It features a staging area (Index) and a performance-optimized status engine using file metadata caching.
+**Kram** is a functional VCS that uses a content-addressable storage system (Blobs, Trees, and Commits) similar to Git. 
 
 ## ✨ Features
 
