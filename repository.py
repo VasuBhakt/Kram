@@ -124,6 +124,7 @@ class Repository:
         full_path = self.path / path
         rel_path = full_path.relative_to(self.path)
         if self._should_ignore(rel_path, ignore_patterns=current_ignore_patterns):
+            print(f"File {rel_path.as_posix()} cannot be added because it or its parent is present in .kramignore")
             return
         index = self._load_index()
         if not full_path.exists():
@@ -164,6 +165,7 @@ class Repository:
         for file_path in full_path.rglob("*"):
             rel_path = file_path.relative_to(self.path)
             if self._should_ignore(rel_path, ignore_patterns=current_ignore_patterns):
+                print(f"File {rel_path.as_posix()} cannot be added because it or its parent is present in .kramignore")
                 continue
             if file_path.is_file():
                 # create blob
