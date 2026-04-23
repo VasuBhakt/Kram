@@ -5,6 +5,7 @@ import platform
 import ctypes
 import fnmatch
 from datetime import datetime
+import heapq
 
 DEFAULT_IGNORES = """# Kram Ignore File
 # For directories, DON'T end it with a trailing slash (e.g. venv not venv/). This could end disastrously
@@ -267,7 +268,7 @@ class Repository:
         files = {}
         for file_path, entry in index.items():
             # handle both old string index and new dict index
-            blob_hash = entry["hash"] if isinstance(entry, dict) else entry
+            blob_hash = entry["hash"] 
             parts = file_path.split("/")
             if len(parts) == 1:
                 # file in root folder
@@ -604,14 +605,10 @@ class Repository:
         # Compare Index vs Last Commit (or empty)
         # Compare Index vs Last Commit (or empty)
         for file_path, entry in index.items():
-            if isinstance(entry, dict):
-                file_hash = entry["hash"]
-                cached_size = entry["size"]
-                cached_mtime = entry["mtime"]
-            else:
-                file_hash = entry
-                cached_size = 0
-                cached_mtime = 0
+            file_hash = entry["hash"]
+            cached_size = entry["size"]
+            cached_mtime = entry["mtime"]
+            
 
             full_path = self.path / file_path
             if file_path not in last_index:
@@ -721,39 +718,60 @@ class Repository:
     def _find_merge_base(self, commit1_hash: str, commit2_hash: str) -> str:
         if not commit1_hash or not commit2_hash:
             return None
-            
-        def get_ancestors(commit_hash):
-            ancestors = set()
-            queue = [commit_hash]
-            while queue:
-                curr = queue.pop(0)
-                if curr not in ancestors:
-                    ancestors.add(curr)
-                    try:
-                        obj = self._load_object(curr)
-                        data = Commit._deserialize_commit(obj.content)
-                        queue.extend(data.parent_hashes)
-                    except:
-                        pass
-            return ancestors
+        if commit1_hash == commit2_hash:
+            return commit1_hash
 
-        ancestors1 = get_ancestors(commit1_hash)
+        # Cache for loaded commits to avoid redundant I/O
+        commit_cache = {}
+
+        def get_commit(h):
+            if h in commit_cache:
+                return commit_cache[h]
+            try:
+                obj = self._load_object(h)
+                commit = Commit._deserialize_commit(obj.content)
+                commit_cache[h] = commit
+                return commit
+            except Exception:
+                return None
+
+        # reachable[hash] is a bitmask: 1 for commit1, 2 for commit2, 3 for both
+        reachable = {commit1_hash: 1, commit2_hash: 2}
         
-        # Walk back from commit2 and find first shared ancestor
-        queue = [commit2_hash]
-        visited = set()
-        while queue:
-            curr = queue.pop(0)
-            if curr in ancestors1:
-                return curr
-            if curr not in visited:
-                visited.add(curr)
-                try:
-                    obj = self._load_object(curr)
-                    data = Commit._deserialize_commit(obj.content)
-                    queue.extend(data.parent_hashes)
-                except:
-                    pass
+        # max-heap
+        pq = []
+        
+        c1 = get_commit(commit1_hash)
+        c2 = get_commit(commit2_hash)
+        
+        if not c1 or not c2:
+            return None
+
+        # negative timestamos for max-heap
+        heapq.heappush(pq, (-c1.timestamp, commit1_hash))
+        heapq.heappush(pq, (-c2.timestamp, commit2_hash))
+        
+        while pq:
+            _, curr_hash = heapq.heappop(pq)
+            mask = reachable[curr_hash]
+            
+            if mask == 3:
+                return curr_hash
+            
+            curr_commit = get_commit(curr_hash)
+            if not curr_commit:
+                continue
+                
+            for p_hash in curr_commit.parent_hashes:
+                if p_hash not in reachable:
+                    reachable[p_hash] = mask
+                    p_commit = get_commit(p_hash)
+                    if p_commit:
+                        heapq.heappush(pq, (-p_commit.timestamp, p_hash))
+                else:
+                    reachable[p_hash] |= mask
+                        # If it became 3, it's already in the queue or processed.
+            
         return None
 
     def merge(self, branch: str, message: str, author: str = "Kram User", override: bool = False):

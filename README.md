@@ -2,7 +2,7 @@
 
 A functional version control system built from scratch in Python.
 
-**Kram** is a functional VCS that uses a content-addressable storage system (Blobs, Trees, and Commits) similar to Git. 
+**Kram** is a functional VCS that uses a content-addressable storage system (Blobs, Trees, and Commits) similar to Git.
 
 ## ✨ Features
 
@@ -104,12 +104,14 @@ kram merge -b <source_branch> -m "Merge message" --override # Force merge in cas
 
 ## 🏗️ Architecture
 
-Kram follows the following object model:
+Kram uses a **Content-Addressable Storage (CAS)** model, where every object is identified by its SHA-256 hash.
 
-- **Blob**: Binary Large Object stores the file content.
-- **Tree**: Stores directory structure and links names to Blobs/Sub-trees.
-- **Commit**: Stores a snapshot of a Tree, parent commit hashes, author, and message.
-- **Index**: A staging area that stores the target state for the next commit, optimized with file size and mtime metadata.
+- **Blob**: Stores the raw bytes of your files.
+- **Tree**: Acts as a directory, mapping filenames to Blobs or other Trees.
+- **Commit**: A permanent snapshot of the project, pointing to a root Tree and its parent commits.
+- **Index**: The staging area that tracks your next commit and caches metadata (`mtime`, `size`) for performance.
+
+**Efficient Storage**: All objects are compressed with `zlib` and sharded into subdirectories (e.g., `.kram/objects/4f/a2...`) to keep the filesystem fast even with millions of files.
 
 ---
 
@@ -117,22 +119,18 @@ Kram follows the following object model:
 
 ### 3-Way Merge Algorithm
 
-Kram implements a robust merging system that avoids simple overwrites:
+Kram employs a recursive 3-way merge algorithm to reconcile divergent histories:
 
-1. **Ancestor Detection**: Uses Breadth-First Search (BFS) to find the Lowest Common Ancestor (LCA) between two branches.
-2. **State Comparison**: Compares the Base, Target, and Source trees.
-3. **Automatic Resolution**: Changes are merged automatically if they don't overlap (e.g., File A changed in Branch 1, File B changed in Branch 2).
-4. **Conflict Safety**: If the same file is modified differently in both branches, Kram halts and requires an `--override` to proceed, preventing accidental data loss.
+1. **Optimized Ancestor Detection**: Uses a simultaneous backwards-traversal from both branch heads. A **Max-Priority Queue (ordered by UTC timestamps)** ensures the search processes the most recent history first. Commits are tracked via **Reachability Bitmasks**; the first commit popped that is reachable from both heads is identified as the Lowest Common Ancestor (LCA). Complexity is $O(D)$ where $D$ is the distance to the split point.
+2. **Three-Way Tree Comparison**: Performs a delta analysis between three states: **Base** (LCA), **Target** (current HEAD), and **Source** (branch to merge).
+3. **Resolution Logic**:
+    - If `Source == Target`: No conflict, no action required.
+    - If `Source == Base`: Change is already reflected or Source is stagnant; keep Target.
+    - If `Target == Base`: Target is stagnant; automatically adopt Source.
+    - If `Source != Target` and both differ from Base: A **merge conflict** is triggered.
 
-### Merkle DAG Architecture
-
-The core data structure of Kram is a **Merkle Directed Acyclic Graph (DAG)**.
-
-- **Leaves (Blobs)**: Store the actual file contents.
-- **Nodes (Trees)**: Store directory maps (filenames to hashes).
-- **Root (Commit)**: Points to a root Tree.
-
-This hierarchy ensures absolute data integrity. Because a Tree's hash is derived from the hashes of its children, any change to a file cascades up the graph, altering the Root Tree's hash. This allows Kram to verify the state of the entire project by checking only the top-level commit hash.
+### Merkle DAG Integrity
+The repository structure is a **Merkle Directed Acyclic Graph (DAG)**. Since every Tree hash is a cryptographic digest of its children (Blobs or sub-Trees), the Root Tree hash provides a verifiable proof of the entire project state. Any mutation at the leaf level (Blobs) cascades a hash-change up to the Commit, ensuring perfect data integrity and tamper-evidence.
 
 ### Performance Optimized Status
 
