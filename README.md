@@ -78,7 +78,7 @@ kram log -n 10 # Shows last 10 commits optional
 ### Revert to previous commit stage
 
 ```bash
-kram revert -c <commit_hash> # restore working directory of commit and ONLY STAGES THE CHANGES, does not create new commit
+kram revert -c <commit_hash> --strict # restore working directory of commit and ONLY STAGES THE CHANGES, does not create new commit. Strict flag restores commit state strictly and removes current uncommited files
 ```
 
 ### Reset commit
