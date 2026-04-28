@@ -402,7 +402,7 @@ class Repository:
         target_commit_data = Commit._deserialize_commit(target_commit_obj.content)
         target_files = self._get_tree_files_dict(target_commit_data.tree_hash)
 
-        to_delete = set(current_index.keys()) - set(target_files.keys())
+        to_delete = files_to_clear - set(target_files.keys())
         self._clear_files(to_delete)
 
         for rel_path, blob_hash in target_files.items():
@@ -666,20 +666,23 @@ class Repository:
                 print(f"   Untracked file: {file_path}")
 
 
-    def revert(self, commit_hash: str):
-        # get current branch
-        current_branch = self.get_current_branch()
+    def revert(self, commit_hash: str, strict: bool = False):
         try:
             commit_obj = self._load_object(commit_hash)
             if commit_obj.obj_type != "commit":
                 print(
                     f"Error: Object {commit_hash} is a {commit_obj.obj_type}, not a commit."
                 )
+                return 
         except Exception as e:
             print(f"Commit not found")
             return
         # delete current files
-        files_to_clear = self._get_files_set_from_index()
+        if strict:
+            files_to_clear = self._get_files_set_from_index()
+        else:
+            files_to_clear = set()   
+        
         # restore previous commit stage
         self._restore_working_directory(files_to_clear, commit_hash)
         print(f"Reverted to commit {commit_hash}. Changes staged for commit.")

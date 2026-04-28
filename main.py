@@ -80,6 +80,9 @@ def main():
     revert_parser.add_argument(
         "--commit", "-c", help="Commit hash to revert to", required=True
     )
+    revert_parser.add_argument(
+        "--strict", help="Strictly include only those files in staging areas present in reference commit.", action="store_true"
+    )
 
     # reset parser
     reset_parser = subparsers.add_parser(
@@ -172,7 +175,7 @@ def main():
             if not repo.kram_dir.exists():
                 print("Not a kram repository")
                 return
-            repo.revert(args.commit)
+            repo.revert(args.commit, args.strict)
         elif args.command == "reset":
             if not repo.kram_dir.exists():
                 print("Not a kram repository")
