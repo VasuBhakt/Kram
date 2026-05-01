@@ -162,6 +162,12 @@ This project was built as part of a deep-dive learning journey into the architec
 
 ---
 
+## 🤝 Contributing
+
+Contributions are welcome! Open issues or submit pull requests to improve the project! <br>
+
+---
+
 ## 🤓 Fun Fact
 
 The inspiration for the name of this project comes from the Sanskrit word **_krama_**, which means Order.
