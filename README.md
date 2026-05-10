@@ -152,16 +152,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE.txt) 
 
 ---
 
-## 🏆 Acknowledgements
-
-This project was built as part of a deep-dive learning journey into the architecture of Version Control Systems. Special thanks to :
-
-- <a href="https://github.com/rivaanranawat">Rivaan Ranawat</a> for the amazing video on building a VCS from scratch, which serves as the foundation of this project. The video can be found on his <a href="https://www.youtube.com/rivaanranawat">YouTube channel</a>.
-
-- Academic references from the **Git Internals** documentation.
-
----
-
 ## 🤝 Contributing
 
 Contributions are welcome! Open issues or submit pull requests to improve the project! <br>
